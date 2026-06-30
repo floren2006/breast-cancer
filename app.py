@@ -338,7 +338,7 @@ elif page == "📈 Insight Analytics":
         import pandas as pd
         import matplotlib.pyplot as plt
 
-        X_test_df = pd.DataFrame(X_test, columns=FEATURE_NAMES)
+        X_test_df = X_test.copy()
         X_test_df["true_label"] = y_test
 
         benign = X_test_df[X_test_df["true_label"] == 0]
@@ -684,10 +684,11 @@ elif page == "📋 Model Evaluation":
     st.title("📋 Model Evaluation")
 
     method_choice = st.selectbox(
-        "Pilih metode untuk dievaluasi", ["Default", "GridSearchCV", "RandomizedSearchCV", "Optuna"], index=1,
+        "Pilih metode untuk dievaluasi",
+        ["Default", "GridSearchCV", "RandomizedSearchCV", "Optuna"],
+        index=1,
     )
 
-    roc_data = results["roc_data"]
     metrics_map = {
         "Default": results["baseline_metrics"],
         "GridSearchCV": results["gs_metrics"],
@@ -700,45 +701,56 @@ elif page == "📋 Model Evaluation":
     metric_card_row(sel_metrics)
 
     st.divider()
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("ROC Curve (Semua Metode)")
-        fig = go.Figure()
-        colors_map = {"Default": "#95a5a6", "GridSearchCV": "#f39c12", "RandomizedSearchCV": "#e67e22", "Optuna": "#27ae60"}
-        for name, d in roc_data.items():
-            fig.add_trace(go.Scatter(
-                x=d["fpr"], y=d["tpr"], mode="lines", name=f'{name} (AUC={d["auc"]:.4f})',
-                line=dict(color=colors_map.get(name, PRIMARY), width=3 if name == method_choice else 1.5),
-            ))
-        fig.add_trace(go.Scatter(x=[0, 1], y=[0, 1], mode="lines", line=dict(dash="dash", color="gray"), name="Random"))
-        fig.update_layout(xaxis_title="False Positive Rate", yaxis_title="True Positive Rate")
-        st.plotly_chart(fig, use_container_width=True)
 
-    with col2:
-        st.subheader("Precision–Recall Curve (Model Terbaik)")
-        pr = results["pr_curve"]
-        fig2 = go.Figure()
-        fig2.add_trace(go.Scatter(x=pr["recalls"], y=pr["precisions"], mode="lines", fill="tozeroy", line=dict(color=PRIMARY, width=3)))
-        fig2.update_layout(xaxis_title="Recall", yaxis_title="Precision", title=f"AP = {pr['avg_precision']:.4f}")
-        st.plotly_chart(fig2, use_container_width=True)
+    # --- ROC Curve (SATU-SATUNYA yang dipertahankan) ---
+    st.subheader("ROC Curve (Semua Metode)")
+    roc_data = results["roc_data"]
+    fig = go.Figure()
+    colors_map = {
+        "Default": "#95a5a6",
+        "GridSearchCV": "#f39c12",
+        "RandomizedSearchCV": "#e67e22",
+        "Optuna": "#27ae60",
+    }
+    for name, d in roc_data.items():
+        fig.add_trace(go.Scatter(
+            x=d["fpr"],
+            y=d["tpr"],
+            mode="lines",
+            name=f'{name} (AUC={d["auc"]:.4f})',
+            line=dict(color=colors_map.get(name, PRIMARY), width=3 if name == method_choice else 1.5),
+        ))
+    fig.add_trace(go.Scatter(
+        x=[0, 1],
+        y=[0, 1],
+        mode="lines",
+        line=dict(dash="dash", color="gray"),
+        name="Random Classifier",
+    ))
+    fig.update_layout(
+        xaxis_title="False Positive Rate",
+        yaxis_title="True Positive Rate",
+        height=450,
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
     st.divider()
-    st.subheader("Confusion Matrix (Model Terbaik)")
-    cm = results["confusion_matrix"]
-    fig3 = px.imshow(
-        cm, text_auto=True, color_continuous_scale="Blues",
-        labels=dict(x="Prediksi", y="Aktual", color="Jumlah"),
-        x=["Benign", "Malignant"], y=["Benign", "Malignant"],
-    )
-    st.plotly_chart(fig3, use_container_width=True)
 
-    st.subheader("Classification Report (Model Terbaik)")
+    # --- Classification Report ---
+    st.subheader(f"Classification Report — Model Terbaik: {results['best_name']}")
     from sklearn.metrics import classification_report
     report = classification_report(
-        results["y_test"], results["y_pred"], target_names=["Benign", "Malignant"], output_dict=True,
+        results["y_test"],
+        results["y_pred"],
+        target_names=["Benign", "Malignant"],
+        output_dict=True,
     )
     report_df = pd.DataFrame(report).T.round(4)
     st.dataframe(report_df, use_container_width=True)
+
+    st.caption(
+        "📌 Precision–Recall Curve dan Confusion Matrix dapat dilihat pada tab **Insight Analytics**."
+    )
 
 # ====================================================================
 # PAGE 7 — ABOUT MODEL
