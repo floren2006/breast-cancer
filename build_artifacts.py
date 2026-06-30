@@ -158,7 +158,7 @@ def objective(trial):
 
 
 study = optuna.create_study(direction="maximize", sampler=optuna.samplers.TPESampler(seed=RANDOM_STATE))
-study.optimize(objective, n_trials=50, show_progress_bar=False)
+study.optimize(objective, n_trials=100, show_progress_bar=False)
 bp = study.best_params
 bp["solver"] = "liblinear"
 pipe_optuna = Pipeline([
