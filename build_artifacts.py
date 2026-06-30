@@ -1,12 +1,26 @@
 """
-Script untuk menyiapkan seluruh artefak (dataset, model, statistik benchmark,
-hasil tuning) yang dipakai oleh aplikasi Streamlit.
-Dijalankan SEKALI saat development -- hasilnya disimpan ke folder model/.
+Script untuk menyiapkan seluruh artefak (model, statistik benchmark, hasil
+tuning) yang dipakai oleh aplikasi Streamlit.
+
+PENTING: Script ini sekarang 1:1 mengikuti alur notebook
+`breast_cancer_classification_FINAL.ipynb`:
+  - Membaca data.csv ASLI (bukan re-generate dari sklearn.datasets), sehingga
+    angka yang muncul di Streamlit identik dengan angka di laporan skripsi.
+  - Optuna dijalankan 100 trial (sebelumnya keliru 50 trial), sama seperti
+    di notebook.
+
+Cara pakai:
+    1. Taruh file ini sejajar dengan folder model/ yang sudah berisi data.csv
+       (file data.csv ASLI dari Kaggle/UCI yang dipakai di notebook).
+    2. pip install -r requirements.txt
+    3. pip install optuna   (dibutuhkan hanya untuk tahap build ini)
+    4. python build_artifacts.py
+    5. Hasilnya: model/best_model_logreg.pkl, model/benchmark_stats.pkl,
+       model/results.pkl -- siap dipakai app.py
 """
 import numpy as np
 import pandas as pd
 import joblib
-from sklearn.datasets import load_breast_cancer
 from sklearn.model_selection import (
     train_test_split, StratifiedKFold, GridSearchCV, RandomizedSearchCV, cross_val_score
 )
@@ -28,46 +42,19 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 RANDOM_STATE = 42
 
 # ----------------------------------------------------------------------
-# 1. Build data.csv in the same column format as the original notebook
-#    (radius_mean, texture_mean, ..., concave points_mean, ..., id, diagnosis)
-# ----------------------------------------------------------------------
-raw = load_breast_cancer()
-feat_names = raw.feature_names  # e.g. 'mean radius', 'radius error', 'worst radius'
-
-
-def rename(col):
-    if col.startswith("mean "):
-        base = col[5:]
-        suffix = "mean"
-    elif col.endswith(" error"):
-        base = col[: -len(" error")]
-        suffix = "se"
-    elif col.startswith("worst "):
-        base = col[6:]
-        suffix = "worst"
-    else:
-        base, suffix = col, ""
-    base = base.replace("concave points", "concave points")  # keep space, just clarity
-    return f"{base}_{suffix}" if suffix else base
-
-
-new_cols = [rename(c) for c in feat_names]
-df = pd.DataFrame(raw.data, columns=new_cols)
-df.insert(0, "id", np.arange(100000, 100000 + len(df)))
-df["diagnosis"] = np.where(raw.target == 0, "M", "B")  # sklearn: 0=malignant,1=benign -> flip
-# sklearn target_names = ['malignant' 'benign'] -> target 0 = malignant
-df["Unnamed: 32"] = np.nan
-
-# Reorder to match typical Kaggle layout: id, diagnosis, <30 features>, Unnamed: 32
-ordered_cols = ["id", "diagnosis"] + new_cols + ["Unnamed: 32"]
-df = df[ordered_cols]
-df.to_csv("model/data.csv", index=False)
-print("data.csv saved:", df.shape)
-
-# ----------------------------------------------------------------------
-# 2. Preprocessing -- identical strategy to the notebook (anti data leakage)
+# 1. Load data.csv ASLI (sama persis dengan yang dipakai di notebook).
+#    TIDAK lagi di-generate ulang dari sklearn.datasets.load_breast_cancer().
 # ----------------------------------------------------------------------
 df_raw = pd.read_csv("model/data.csv")
+print("Shape awal:", df_raw.shape)
+assert df_raw.shape[0] == 569, (
+    "Jumlah baris data.csv tidak sesuai (569 sampel diharapkan). "
+    "Pastikan ini adalah data.csv ASLI yang sama dengan yang dipakai di notebook."
+)
+
+# ----------------------------------------------------------------------
+# 2. Preprocessing -- identik dengan notebook (anti data leakage)
+# ----------------------------------------------------------------------
 df_model = df_raw.copy()
 df_model.drop(columns=["id", "Unnamed: 32"], inplace=True, errors="ignore")
 df_model["diagnosis"] = df_model["diagnosis"].map({"M": 1, "B": 0})
@@ -145,8 +132,11 @@ y_rs_prob = rs.best_estimator_.predict_proba(X_test)[:, 1]
 rs_metrics = eval_metrics(y_test, y_rs, y_rs_prob)
 
 # ----------------------------------------------------------------------
-# 6. Optuna
+# 6. Optuna -- DIPERBAIKI: 100 trial, sama seperti notebook (sebelumnya 50)
 # ----------------------------------------------------------------------
+print("Menjalankan Optuna 100 trial...")
+
+
 def objective(trial):
     C = trial.suggest_float("C", 1e-4, 1e3, log=True)
     penalty = trial.suggest_categorical("penalty", ["l1", "l2"])
@@ -222,7 +212,7 @@ precisions, recalls, thresholds = precision_recall_curve(y_test, y_pred_prob)
 avg_precision = average_precision_score(y_test, y_pred_prob)
 
 # ----------------------------------------------------------------------
-# 10. ROC curve data (for all 4 methods)
+# 10. ROC curve data (untuk 4 metode)
 # ----------------------------------------------------------------------
 roc_data = {}
 for name, probs in [
@@ -233,12 +223,12 @@ for name, probs in [
     roc_data[name] = {"fpr": fpr, "tpr": tpr, "auc": roc_auc_score(y_test, probs)}
 
 # ----------------------------------------------------------------------
-# 11. Confusion matrix of best model
+# 11. Confusion matrix model terbaik
 # ----------------------------------------------------------------------
 cm = confusion_matrix(y_test, y_pred)
 
 # ----------------------------------------------------------------------
-# 12. Save everything
+# 12. Simpan semua artefak
 # ----------------------------------------------------------------------
 joblib.dump(best_model, "model/best_model_logreg.pkl")
 joblib.dump({
@@ -270,4 +260,4 @@ joblib.dump({
     "y_train": y_train.values,
 }, "model/results.pkl")
 
-print("Semua artefak berhasil disimpan ke folder model/")
+print("Semua artefak berhasil disimpan ke folder model/ (konsisten dengan notebook).")
