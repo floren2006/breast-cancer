@@ -326,44 +326,138 @@ elif page == "📈 Insight Analytics":
 
     # ---------------- Insight 4 ----------------
     with insight_tabs[3]:
-        st.subheader("Feature Distribution Analysis")
-        selected_feature = st.selectbox("Pilih fitur", options=FEATURE_NAMES, index=FEATURE_NAMES.index("texture_mean") if "texture_mean" in FEATURE_NAMES else 0)
+        st.subheader("Texture & Smoothness Analysis — Decision Space")
+        st.caption("Hubungan antara kekasaran permukaan sel (texture_mean) dan kehalusan sel (smoothness_mean)")
 
-        col1, col2 = st.columns(2)
+        # Ambil data dari results
+        X_test = results["X_test"]
+        y_test = results["y_test"]
+        FEATURE_NAMES = benchmark["feature_names"]
+
+        # Buat DataFrame untuk plotting
+        import pandas as pd
+        import matplotlib.pyplot as plt
+
+        X_test_df = pd.DataFrame(X_test, columns=FEATURE_NAMES)
+        X_test_df["true_label"] = y_test
+
+        benign = X_test_df[X_test_df["true_label"] == 0]
+        malignant = X_test_df[X_test_df["true_label"] == 1]
+
+        # --- Scatter Plot ---
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        ax.scatter(
+            benign["texture_mean"],
+            benign["smoothness_mean"],
+            c="#2ecc71",
+            label="Benign (Jinak)",
+            alpha=0.7,
+            s=80,
+            edgecolors="white",
+            linewidth=1.5,
+        )
+        ax.scatter(
+            malignant["texture_mean"],
+            malignant["smoothness_mean"],
+            c="#e74c3c",
+            label="Malignant (Ganas)",
+            alpha=0.7,
+            s=80,
+            edgecolors="white",
+            linewidth=1.5,
+        )
+
+        # Tambahkan titik rata-rata kelas
+        mean_benign = benchmark["mean_benign"]
+        mean_malignant = benchmark["mean_malignant"]
+
+        ax.scatter(
+            mean_benign["texture_mean"],
+            mean_benign["smoothness_mean"],
+            c="#27ae60",
+            marker="X",
+            s=300,
+            edgecolors="black",
+            linewidth=2,
+            label="Centroid Benign",
+            zorder=5,
+        )
+        ax.scatter(
+            mean_malignant["texture_mean"],
+            mean_malignant["smoothness_mean"],
+            c="#c0392b",
+            marker="X",
+            s=300,
+            edgecolors="black",
+            linewidth=2,
+            label="Centroid Malignant",
+            zorder=5,
+        )
+
+        ax.set_xlabel("texture_mean (Kekasaran Permukaan Sel)", fontsize=12)
+        ax.set_ylabel("smoothness_mean (Kehalusan Permukaan Sel)", fontsize=12)
+        ax.set_title("Decision Space: Texture vs Smoothness", fontsize=13, fontweight="bold")
+        ax.legend(loc="best", fontsize=10)
+        ax.grid(True, alpha=0.3)
+
+        st.pyplot(fig)
+
+        # --- Statistik Pendukung ---
+        st.divider()
+        col1, col2, col3, col4 = st.columns(4)
+
         with col1:
-            fig = px.histogram(
-                df_raw, x=selected_feature, color="diagnosis_label", barmode="overlay", nbins=30,
-                color_discrete_map={"Benign": BENIGN_COLOR, "Malignant": MALIGNANT_COLOR},
-                title=f"Histogram — {selected_feature}",
+            st.metric(
+                "Mean Texture - Benign",
+                f"{mean_benign['texture_mean']:.3f}",
             )
-            st.plotly_chart(fig, use_container_width=True)
         with col2:
-            fig2 = px.box(
-                df_raw, x="diagnosis_label", y=selected_feature, color="diagnosis_label",
-                color_discrete_map={"Benign": BENIGN_COLOR, "Malignant": MALIGNANT_COLOR},
-                title=f"Boxplot — {selected_feature}",
+            st.metric(
+                "Mean Texture - Malignant",
+                f"{mean_malignant['texture_mean']:.3f}",
+                delta=f"+{mean_malignant['texture_mean'] - mean_benign['texture_mean']:.3f}",
             )
-            st.plotly_chart(fig2, use_container_width=True)
+        with col3:
+            st.metric(
+                "Mean Smoothness - Benign",
+                f"{mean_benign['smoothness_mean']:.5f}",
+            )
+        with col4:
+            st.metric(
+                "Mean Smoothness - Malignant",
+                f"{mean_malignant['smoothness_mean']:.5f}",
+                delta=f"+{mean_malignant['smoothness_mean'] - mean_benign['smoothness_mean']:.5f}",
+            )
 
-        mean_b = df_raw[df_raw["diagnosis_label"] == "Benign"][selected_feature].mean()
-        mean_m = df_raw[df_raw["diagnosis_label"] == "Malignant"][selected_feature].mean()
-        median_b = df_raw[df_raw["diagnosis_label"] == "Benign"][selected_feature].median()
-        median_m = df_raw[df_raw["diagnosis_label"] == "Malignant"][selected_feature].median()
-
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Mean Benign", f"{mean_b:.3f}")
-        m2.metric("Mean Malignant", f"{mean_m:.3f}")
-        m3.metric("Median Benign", f"{median_b:.3f}")
-        m4.metric("Median Malignant", f"{median_m:.3f}")
-
-        direction = "lebih tinggi" if mean_m > mean_b else "lebih rendah"
         st.info(
-            f"Rata-rata **{selected_feature}** pada kelas Malignant ({mean_m:.3f}) {direction} "
-            f"dibandingkan Benign ({mean_b:.3f}). Pola ini konsisten dengan kontribusi fitur "
-            "terhadap koefisien model pada tab Feature Importance.",
+            "**Interpretasi Klinis:** Sel Malignant cenderung memiliki nilai "
+            "**texture_mean yang lebih tinggi** (permukaan lebih kasar) dibandingkan Benign. "
+            "Kombinasi texture tinggi + smoothness rendah mengindikasikan anomali morfologi sel "
+            "yang berpotensi ganas. Scatter plot menunjukkan pemisahan yang cukup jelas antara "
+            "kedua kelas pada ruang fitur ini.",
             icon="🔬",
         )
 
+        # --- Boxplot texture_mean sebagai pelengkap ---
+        st.subheader("Distribusi texture_mean per Kelas")
+        fig2, ax2 = plt.subplots(figsize=(10, 5))
+
+        bp = ax2.boxplot(
+            [benign["texture_mean"].values, malignant["texture_mean"].values],
+            labels=["Benign", "Malignant"],
+            patch_artist=True,
+            notch=True,
+        )
+        bp["boxes"][0].set_facecolor("#2ecc71")
+        bp["boxes"][1].set_facecolor("#e74c3c")
+
+        ax2.set_ylabel("texture_mean", fontsize=12)
+        ax2.set_title("Distribusi texture_mean per Kelas", fontsize=12, fontweight="bold")
+        ax2.grid(True, alpha=0.3, axis="y")
+
+        st.pyplot(fig2)
+        
     # ---------------- Insight 5 ----------------
     with insight_tabs[4]:
         st.subheader("Hyperparameter Convergence")
